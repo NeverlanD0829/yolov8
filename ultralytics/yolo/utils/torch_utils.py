@@ -139,7 +139,7 @@ def model_info(model, verbose=False, imgsz=640):
     flops = get_flops(model, imgsz)
     fs = f', {flops:.1f} GFLOPs' if flops else ''
     m = Path(getattr(model, 'yaml_file', '') or model.yaml.get('yaml_file', '')).stem.replace('yolo', 'YOLO') or 'Model'
-    LOGGER.info(f"{m} summary: {len(list(model.modules()))} layers, {n_p} parameters, {n_g} gradients{fs}")
+    LOGGER.info(f"{m} summary: {len(list(model.modules()))} layers, {n_p} parameters,Model_size:{(n_p * 4)/(1024 * 1024)} MB , {n_g} gradients{fs}")
 
 
 def get_num_params(model):
