@@ -4,6 +4,7 @@ Common modules
 """
 
 import math
+from unittest import result
 import warnings
 
 import torch
@@ -191,60 +192,81 @@ class C2f(nn.Module):
         return self.cv2(torch.cat(y, 1))
 
 class EMA(nn.Module):
-    def __init__(self, channels, c2=None, factor=48):
+    def __init__(self, factor=32):
         super(EMA, self).__init__()
         self.groups = factor
-        assert channels // self.groups > 0
         self.softmax = nn.Softmax(-1)
         self.agp = nn.AdaptiveAvgPool2d((1, 1))
         self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
         self.pool_w = nn.AdaptiveAvgPool2d((1, None))
-        self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
-        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0)
-        self.conv3x3 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=3, stride=1, padding=1)
+        self.gn = None  # 默认不使用 group normalization
+        self.conv1x1 = None
+        self.conv3x3 = None
 
-    def forward(self, x):
+    def forward(self, x, channels):
         b, c, h, w = x.size()
-        group_x = x.reshape(b * self.groups, -1, h, w)  # b*g,c//g,h,w      [256,2,32,32]
+
+        # 根据输入的通道数动态初始化 conv 和 group norm
+        self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
+        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0).float()
+        self.conv3x3 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=3, stride=1, padding=1).float()
+
+        x = x.float()  # 强制将输入转换为 float32，确保输入数据的类型一致
+
+        group_x = x.reshape(b * self.groups, -1, h, w)  # b*g, c//g, h, w
         x_h = self.pool_h(group_x)
         x_w = self.pool_w(group_x).permute(0, 1, 3, 2)
         x_hw = torch.cat([x_h, x_w], dim=2)
-        print(self.conv1x1.weight.shape)
 
+        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2)).float()  # 确保卷积操作的输出为 float32
 
-        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2))
-        
         x_h, x_w = torch.split(hw, [h, w], dim=2)
         x1 = self.gn(group_x * x_h.sigmoid() * x_w.permute(0, 1, 3, 2).sigmoid())
         x2 = self.conv3x3(group_x)
         x11 = self.softmax(self.agp(x1).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
-        x12 = x2.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
+        x12 = x2.reshape(b * self.groups, channels // self.groups, -1)  # b*g, c//g, hw
         x21 = self.softmax(self.agp(x2).reshape(b * self.groups, -1, 1).permute(0, 2, 1))
-        x22 = x1.reshape(b * self.groups, c // self.groups, -1)  # b*g, c//g, hw
+        x22 = x1.reshape(b * self.groups, channels // self.groups, -1)  # b*g, c//g, hw
         weights = (torch.matmul(x11, x12) + torch.matmul(x21, x22)).reshape(b * self.groups, 1, h, w)
         return (group_x * weights.sigmoid()).reshape(b, c, h, w)
-    
+
+
 class C2fWithEMA(nn.Module):
     # CSP Bottleneck with 2 convolutions and EMA module integrated
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, factor=32):  # ch_in, ch_out, number, shortcut, groups, expansion, EMA factor
         super().__init__()
         self.c = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
-        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)  # cv1 输出 2*self.c 通道
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # cv2 输出 c2 通道
         self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
         
-        # Integrating EMA module
-        self.ema = EMA(c2, factor=factor)
+        # 在这里初始化 EMA 时，不指定 channels，动态传递
+        self.ema = EMA(factor=factor)  # 只传递 factor，channels 在 forward 中动态传递
 
     def forward(self, x):
+        # 确保输入数据 x 是 float32 类型
+        x = x.float()
+
+        # 对输入数据进行卷积，并将其分为两部分
         y = list(self.cv1(x).split((self.c, self.c), 1))  # Split into 2 parts
-        y.extend(m(y[-1]) for m in self.m)  # Apply bottleneck modules
+        # 应用 bottleneck 模块
+        y.extend(m(y[-1]) for m in self.m)
+        # 将结果沿着通道维度拼接
         y_cat = torch.cat(y, 1)
-        # Apply EMA on the concatenated output of the convolutions
-        y_ema = self.ema(torch.cat(y, 1))  # Concatenate and pass through EMA
         
-        return self.cv2(y_ema)  # Final convolution after EMA processing
-    
+        # 确保 y_cat 是 float32 类型
+        y_cat = y_cat.float()
+
+        # 获取 y_cat 的通道数，并将其传递给 EMA
+        channels = y_cat.size(1)
+        y_ema = self.ema(y_cat, channels)  # 将通道数传递给 EMA 模块
+        y_ema = y_ema.float()
+        # 最后通过 cv2 进行卷积处理
+        result = self.cv2(y_ema)
+        result = result.float()  # 确保输出结果为 float32
+        return result  # Final convolution after EMA processing
+
+
 class ChannelAttention(nn.Module):
     # Channel-attention module https://github.com/open-mmlab/mmdetection/tree/v3.0.0rc1/configs/rtmdet
     def __init__(self, channels: int) -> None:
