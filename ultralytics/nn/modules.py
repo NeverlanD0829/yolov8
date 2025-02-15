@@ -188,6 +188,7 @@ class C2f(nn.Module):
     def forward(self, x):
         y = list(self.cv1(x).split((self.c, self.c), 1))
         y.extend(m(y[-1]) for m in self.m)
+        y_cat = torch.cat(y, 1)
         return self.cv2(torch.cat(y, 1))
 
 
