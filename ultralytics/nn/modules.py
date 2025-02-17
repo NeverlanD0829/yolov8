@@ -11,6 +11,37 @@ import torch
 import torch.nn as nn
 
 from ultralytics.yolo.utils.tal import dist2bbox, make_anchors
+from torch.cuda.amp import autocast
+
+class C2fWithEMA(nn.Module):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5, factor=32):  # ch_in, ch_out, number, shortcut, groups, expansion, EMA factor
+        super().__init__()
+        self.c = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)  # cv1 输出 2*self.c 通道
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # cv2 输出 c2 通道
+        self.m = nn.ModuleList(Bottleneck(self.c, self.c, shortcut, g, k=((3, 3), (3, 3)), e=1.0) for _ in range(n))
+        
+        # 在这里初始化 EMA 时，不指定 channels，动态传递
+        self.ema = EMA(factor=factor)  # 只传递 factor，channels 在 forward 中动态传递
+
+    def forward(self, x):
+        # 对输入数据进行卷积，并将其分为两部分
+        y = list(self.cv1(x).split((self.c, self.c), 1))  # Split into 2 parts
+        # 应用 bottleneck 模块
+        y.extend(m(y[-1]) for m in self.m)
+        # 将结果沿着通道维度拼接
+        y_cat = torch.cat(y, 1)
+        
+        # 使用 autocast 来启用混合精度
+        with autocast():
+            # 获取 y_cat 的通道数，并将其传递给 EMA
+            channels = y_cat.size(1)
+            y_ema = self.ema(y_cat, channels)  # 将通道数传递给 EMA 模块
+        
+        # 最后通过 cv2 进行卷积处理
+        result = self.cv2(y_ema)
+        return result
+
 
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
@@ -207,18 +238,16 @@ class EMA(nn.Module):
         b, c, h, w = x.size()
 
         # 根据输入的通道数动态初始化 conv 和 group norm
-        self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups)
-        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0).float()
-        self.conv3x3 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=3, stride=1, padding=1).float()
-
-        x = x.float()  # 强制将输入转换为 float32，确保输入数据的类型一致
+        self.gn = nn.GroupNorm(channels // self.groups, channels // self.groups).to(x.device,x.dtype)
+        self.conv1x1 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=1, stride=1, padding=0).to(x.device,x.dtype)# 修改为与输入x相同的dtype
+        self.conv3x3 = nn.Conv2d(channels // self.groups, channels // self.groups, kernel_size=3, stride=1, padding=1).to(x.device,x.dtype)# 修改为与输入x相同的dtype
 
         group_x = x.reshape(b * self.groups, -1, h, w)  # b*g, c//g, h, w
         x_h = self.pool_h(group_x)
         x_w = self.pool_w(group_x).permute(0, 1, 3, 2)
-        x_hw = torch.cat([x_h, x_w], dim=2)
+        x_hw = torch.cat([x_h, x_w], dim=2) # 确保数据类型与输入x一致
 
-        hw = self.conv1x1(torch.cat([x_h, x_w], dim=2)).float()  # 确保卷积操作的输出为 float32
+        hw = self.conv1x1(x_hw)
 
         x_h, x_w = torch.split(hw, [h, w], dim=2)
         x1 = self.gn(group_x * x_h.sigmoid() * x_w.permute(0, 1, 3, 2).sigmoid())
@@ -244,27 +273,19 @@ class C2fWithEMA(nn.Module):
         self.ema = EMA(factor=factor)  # 只传递 factor，channels 在 forward 中动态传递
 
     def forward(self, x):
-        # 确保输入数据 x 是 float32 类型
-        x = x.float()
-
         # 对输入数据进行卷积，并将其分为两部分
         y = list(self.cv1(x).split((self.c, self.c), 1))  # Split into 2 parts
         # 应用 bottleneck 模块
         y.extend(m(y[-1]) for m in self.m)
         # 将结果沿着通道维度拼接
         y_cat = torch.cat(y, 1)
-        
-        # 确保 y_cat 是 float32 类型
-        y_cat = y_cat.float()
-
         # 获取 y_cat 的通道数，并将其传递给 EMA
-        channels = y_cat.size(1)
-        y_ema = self.ema(y_cat, channels)  # 将通道数传递给 EMA 模块
-        y_ema = y_ema.float()
+        with autocast():
+            channels = y_cat.size(1)
+            y_ema = self.ema(y_cat, channels)  # 将通道数传递给 EMA 模块
         # 最后通过 cv2 进行卷积处理
         result = self.cv2(y_ema)
-        result = result.float()  # 确保输出结果为 float32
-        return result  # Final convolution after EMA processing
+        return result  
 
 
 class ChannelAttention(nn.Module):
