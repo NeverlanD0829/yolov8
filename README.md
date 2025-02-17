@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <div align="center">
   <p>
     <a align="center" href="https://ultralytics.com/yolov8" target="_blank">
@@ -291,3 +292,6 @@ For professional support please [Contact Us](https://ultralytics.com/contact).
   <a href="https://www.instagram.com/ultralytics/" style="text-decoration:none;">
     <img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-instagram.png" width="3%" alt="" /></a>
 </div>
+=======
+# yolov8
+>>>>>>> f6765077e8c0967d4c9e57558015248f696be645
