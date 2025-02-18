@@ -5,6 +5,7 @@ from copy import deepcopy
 from pathlib import Path
 import torch
 import torch.nn as nn
+from .modules.AFPN import Detect_AFPN
 
 from ultralytics.nn.modules import (
     AIFI,
@@ -258,7 +259,7 @@ class BaseModel(nn.Module):
         """
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
-        if isinstance(m, (Detect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM, Detect_dyhead, CLLAHead,
+        if isinstance(m, (Detect_AFPN,Detect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM, Detect_dyhead, CLLAHead,
                           Detect_DySnakeConv, Detect_dyhead3, Detect_DySnakeConv, Segment_DBB, Detect_DBB, Detect_FASFF,
                           RFAHead, RFASegment, RepHead, Detect_Adown, Detect_SA, Segment_SA, HATHead)):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
             m.stride = fn(m.stride)
@@ -319,7 +320,7 @@ class DetectionModel(BaseModel):
 
         # Build strides
         m = self.model[-1]  # Detect()
-        if isinstance(m, (Detect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM, Detect_dyhead, CLLAHead,
+        if isinstance(m, (Detect_AFPN,Detect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM, Detect_dyhead, CLLAHead,
                           Detect_DySnakeConv, Detect_dyhead3, Detect_DySnakeConv, Segment_DBB, Detect_DBB, Detect_FASFF,
                           RFAHead, RFASegment, RepHead, Detect_Adown, Detect_SA, Segment_SA, HATHead)):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
             s = 640  # 2x min stride
@@ -1051,7 +1052,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, Detect_AFPN4,  Detect_AFPN3, Detect_ASFF,
                    Detect_FRM, Detect_dyhead, CLLAHead, Detect_dyhead3, Detect_DySnakeConv, Segment_DySnakeConv,
                    Pose_DBB, Segment_DBB, Detect_DBB, Detect_FASFF, RFAHead, RFASegment, RFAPose, RepHead,
-                   Detect_Adown, Pose_SA, Segment_SA, Detect_SA, HATHead}:
+                   Detect_Adown, Pose_SA, Segment_SA, Detect_SA, HATHead,Detect_AFPN}:
             args.append([ch[x] for x in f])
             if m in (Segment, Segment_DySnakeConv, Segment_DBB, RFASegment, Segment_SA):
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
@@ -1189,7 +1190,7 @@ def guess_model_task(model):
                 return "pose"
             elif isinstance(m, OBB):
                 return "obb"
-            elif isinstance(m, (Detect, WorldDetect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM,
+            elif isinstance(m, (Detect, Detect_AFPN,WorldDetect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM,
                                 Detect_dyhead, CLLAHead, Detect_dyhead3, Detect_DySnakeConv, Detect_DBB, Detect_FASFF,
                                 RFAHead, RepHead, Detect_Adown, Detect_SA, HATHead)):
                 return "detect"
