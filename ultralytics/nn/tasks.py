@@ -264,7 +264,7 @@ class BaseModel(nn.Module):
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect_AFPN,Detect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM, Detect_dyhead, CLLAHead,
-                          Detect_DySnakeConv, Detect_dyhead3, Detect_DySnakeConv, Segment_DBB, Detect_DBB, Detect_FASFF,
+                          Detect_DySnakeConv, Detect_dyhead3, Detect_DySnakeConv, Segment_DBB, Detect_DBB, Pose_DBB,Detect_FASFF,
                           RFAHead, RFASegment, RepHead, Detect_Adown, Detect_SA, Segment_SA, HATHead)):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
             m.stride = fn(m.stride)
             m.anchors = fn(m.anchors)
@@ -325,7 +325,7 @@ class DetectionModel(BaseModel):
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect_AFPN,Detect, Detect_AFPN4, Detect_AFPN3, Detect_ASFF, Detect_FRM, Detect_dyhead, CLLAHead,
-                          Detect_DySnakeConv, Detect_dyhead3, Detect_DySnakeConv, Segment_DBB, Detect_DBB, Detect_FASFF,
+                          Detect_DySnakeConv, Detect_dyhead3, Detect_DySnakeConv, Segment_DBB, Detect_DBB, Pose_DBB,Detect_FASFF,
                           RFAHead, RFASegment, RepHead, Detect_Adown, Detect_SA, Segment_SA, HATHead)):  # includes all Detect subclasses like Segment, Pose, OBB, WorldDetect
             s = 640  # 2x min stride
             m.inplace = self.inplace
