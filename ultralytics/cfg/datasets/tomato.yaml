@@ -15,5 +15,5 @@ test: images/test # test images (optional)
 
 # Classes
 names:
-  0: rt
-  1: urt
+  0: urt
+  1: rt
