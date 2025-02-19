@@ -67,6 +67,8 @@ from ultralytics.utils.torch_utils import (
     time_sync,
 )
 
+from .Addmodules import iRMB,C2f_iRMB_EMA,iRMB_EMA
+
 try:
     import thop
 except ImportError:
