@@ -68,7 +68,7 @@ from ultralytics.utils.torch_utils import (
 )
 
 from .Addmodules import iRMB,C2f_iRMB_EMA,iRMB_EMA
-
+from .Addmodules.FRMHead import Detect_FRM
 try:
     import thop
 except ImportError:
@@ -1194,7 +1194,7 @@ def guess_model_task(model):
                 return cfg2task(eval(x))
 
         for m in model.modules():
-            if isinstance(m, (Segment, Segment_DySnakeConv, Segment_DBB, RFASegment, Segment_SA)):
+            if isinstance(m, (Segment, Segment_DySnakeConv, Segment_DBB, Detect_FRM,RFASegment, Segment_SA)):
                 return "segment"
             elif isinstance(m, Classify):
                 return "classify"
