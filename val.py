@@ -3,8 +3,8 @@ warnings.filterwarnings('ignore')
 from ultralytics import YOLO
 
 if __name__ == '__main__':
-    model = YOLO('替换你的模型权重文件地址')
-    model.val(data=r'数据集配置的yaml文件地址',
+    model = YOLO('/home/chen/Desktop/yolo-V8/yolov8n.pt')
+    model.val(data=r'/home/chen/Desktop/yolo-V8/ultralytics/cfg/datasets/sun.yaml',
               split='val',
               imgsz=640,
               batch=16,
